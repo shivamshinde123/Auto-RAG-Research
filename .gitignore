@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# Environment variables
+.env
+
+# Secrets and credentials
+.secrets/*
+!.secrets/.gitkeep
+
+# MLflow
+mlruns/
+
+# FAISS
+.faiss_index/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Experiment artifacts (generated during runs)
+experiment_config.json
+experiment_history.jsonl
+agent_notes.md
+best_config.json
