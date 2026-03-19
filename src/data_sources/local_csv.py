@@ -24,6 +24,8 @@ class LocalCsvDataSource(BaseDataSource):
         path = self.config.get("path")
         if not path:
             raise ValueError("local_csv config missing required 'path' field")
+        if ".." in Path(path).parts:
+            raise ValueError("local_csv path must not contain '..' components")
         text_column = self.config.get("text_column")
         if not text_column:
             raise ValueError("local_csv config missing required 'text_column' field")

@@ -24,6 +24,8 @@ class LocalTxtDataSource(BaseDataSource):
         path = self.config.get("path")
         if not path:
             raise ValueError("local_txt config missing required 'path' field")
+        if ".." in Path(path).parts:
+            raise ValueError("local_txt path must not contain '..' components")
         return True
 
     def health_check(self) -> bool:
