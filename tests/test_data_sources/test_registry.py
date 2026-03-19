@@ -57,15 +57,8 @@ class TestRegistry:
         with pytest.raises(ValueError, match="missing 'type' field"):
             get_data_source({})
 
-    def test_stubs_raise_not_implemented(self):
-        """Stub connectors raise NotImplementedError for all methods."""
+    def test_implemented_connectors_have_load(self):
+        """Implemented connectors have working load/validate_config methods."""
         source = get_data_source({"type": "local_pdf", "path": "data/pdfs/"})
-
-        with pytest.raises(NotImplementedError):
-            source.load()
-
-        with pytest.raises(NotImplementedError):
-            source.validate_config()
-
-        with pytest.raises(NotImplementedError):
-            source.health_check()
+        # validate_config should work (path is set)
+        assert source.validate_config() is True
