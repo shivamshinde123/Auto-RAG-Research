@@ -131,6 +131,8 @@ def suggest_next_config(
 
     client = OpenAI()
 
+    logger.info("Requesting next config from agent (model=%s, history=%d entries)", llm_model, len(history))
+
     for attempt in range(max_retries):
         prompt = _build_prompt(search_space, history, current_scores)
 
@@ -183,5 +185,6 @@ def suggest_next_config(
         return config
 
     raise RuntimeError(
-        f"Agent failed to suggest a valid, non-duplicate config after {max_retries} attempts"
+        f"Agent failed to suggest a valid, non-duplicate config after {max_retries} attempts. "
+        "Try expanding the search space in program.md to give the agent more options."
     )

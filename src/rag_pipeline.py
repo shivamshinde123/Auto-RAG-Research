@@ -39,7 +39,11 @@ def get_embedding_model(model_name: str):
         from langchain_community.embeddings import HuggingFaceEmbeddings
         return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     else:
-        raise ValueError(f"Unknown embedding model: {model_name}")
+        raise ValueError(
+            f"Unknown embedding model: '{model_name}'. "
+            "Supported models: text-embedding-ada-002, BGE-large, all-MiniLM-L6-v2. "
+            "Update the embedding_model list in your program.md search space."
+        )
 
 
 def build_vector_store(chunks: List[Document], embedding_model_name: str):
@@ -97,6 +101,7 @@ def run_pipeline(
     llm = get_llm(llm_model)
 
     # Step 4: For each QA pair, retrieve and generate
+    logger.info("Processing %d QA pairs (model=%s, top_k=%d)", len(qa_pairs), llm_model, top_k)
     results = []
     for i, qa in enumerate(qa_pairs):
         question = qa["question"]

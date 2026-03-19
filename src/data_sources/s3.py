@@ -24,7 +24,10 @@ class S3DataSource(BaseDataSource):
     def validate_config(self) -> bool:
         bucket = self.config.get("bucket")
         if not bucket:
-            raise ValueError("s3 config missing required 'bucket' field")
+            raise ValueError(
+                "s3 config missing required 'bucket' field. "
+                "Add 'bucket: <bucket_name>' to the s3 [[data_sources]] block."
+            )
         if not os.environ.get("AWS_ACCESS_KEY_ID"):
             raise ValueError(
                 "AWS_ACCESS_KEY_ID environment variable not set. "
