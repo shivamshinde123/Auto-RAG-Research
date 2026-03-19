@@ -11,6 +11,11 @@ import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import List
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from src.config_loader import load_config
 from src.cost_tracker import CostTracker
@@ -49,7 +54,7 @@ def _search_space_as_dict(search_space) -> dict:
     }
 
 
-def _build_data_source_configs(program_config) -> list[dict]:
+def _build_data_source_configs(program_config) -> List[dict]:
     """Convert DataSourceConfig dataclasses to plain dicts for dataset_loader."""
     configs = []
     for ds in program_config.data_sources:
@@ -58,15 +63,18 @@ def _build_data_source_configs(program_config) -> list[dict]:
     return configs
 
 
-def _load_existing_history(history_path: Path) -> list[dict]:
+def _load_existing_history(history_path: Path) -> List[dict]:
     """Load existing experiment history for resume support."""
     if not history_path.exists():
         return []
     entries = []
-    for line in history_path.read_text(encoding="utf-8").splitlines():
+    for i, line in enumerate(history_path.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
         if line:
-            entries.append(json.loads(line))
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                logger.warning("Skipping malformed history entry on line %d: %s", i, e)
     return entries
 
 
@@ -192,14 +200,24 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
             logger.info("Config: %s", json.dumps(current_config))
 
             # Run RAG pipeline
-            results = run_pipeline(documents, qa_pairs, current_config)
+            results, chunk_count = run_pipeline(documents, qa_pairs, current_config)
 
             if not results:
                 logger.warning("Pipeline returned no results, skipping evaluation")
+                cost_tracker.end_iteration()
                 continue
+
+            # Estimate pipeline cost (embedding + LLM generation per QA pair)
+            llm_model = current_config.get("llm_model", "gpt-4o-mini")
+            emb_model = current_config.get("embedding_model", "text-embedding-ada-002")
+            # ~200 tokens per chunk for embedding, ~500 in/200 out per QA
+            cost_tracker.add_cost(emb_model, input_tokens=chunk_count * 200)
+            cost_tracker.add_cost(llm_model, input_tokens=len(results) * 500, output_tokens=len(results) * 200)
 
             # Evaluate
             scores = evaluate(results)
+            # Estimate evaluation cost (judge LLM calls)
+            cost_tracker.add_cost("gpt-4o-mini", input_tokens=len(results) * 800, output_tokens=len(results) * 100)
             composite = scores.get("composite_score", -1)
             logger.info("Scores: composite=%.4f", composite)
 
@@ -256,23 +274,34 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
                 )
                 break
 
+            # Don't call agent after the last iteration
             if iteration >= max_iterations:
-                logger.info("Max iterations reached (%d)", max_iterations)
                 break
 
             # Call agent for next config
             from src.agent import suggest_next_config
 
-            suggest_next_config(
-                history_path=history_path,
-                search_space=search_space_dict,
-                current_scores=scores,
-                config_output_path=config_output_path,
-                notes_path=notes_path,
-            )
+            try:
+                suggest_next_config(
+                    history_path=history_path,
+                    search_space=search_space_dict,
+                    current_scores=scores,
+                    config_output_path=config_output_path,
+                    notes_path=notes_path,
+                )
+            except RuntimeError as e:
+                logger.error("Agent failed: %s — stopping experiment", e)
+                break
 
     except KeyboardInterrupt:
         logger.info("Interrupted by user — saving state")
+
+    finally:
+        # Always save best config and print summary
+        if best_config:
+            best_config_path.write_text(
+                json.dumps(best_config, indent=2) + "\n", encoding="utf-8"
+            )
 
     # Print summary
     print("\n" + "=" * 60)
@@ -281,10 +310,6 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
     if best_config:
         print(f"Best composite score: {best_score:.4f}")
         print(f"Best config: {json.dumps(best_config, indent=2)}")
-        # Save best config
-        best_config_path.write_text(
-            json.dumps(best_config, indent=2) + "\n", encoding="utf-8"
-        )
     else:
         print("No successful runs completed.")
     cost_summary = cost_tracker.summary()

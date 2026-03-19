@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_MIMES = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "text/plain": "txt",
 }
 
 
@@ -58,14 +59,23 @@ class GdriveDataSource(BaseDataSource):
         folder_id = self.config["folder_id"]
         documents: List[Document] = []
 
-        # List files in folder
+        # List files in folder (with pagination)
         query = f"'{folder_id}' in parents and trashed=false"
-        results = service.files().list(
-            q=query,
-            pageSize=100,
-            fields="files(id, name, mimeType, modifiedTime)",
-        ).execute()
-        files = results.get("files", [])
+        files = []
+        page_token = None
+        while True:
+            kwargs = dict(
+                q=query,
+                pageSize=100,
+                fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
+            )
+            if page_token:
+                kwargs["pageToken"] = page_token
+            results = service.files().list(**kwargs).execute()
+            files.extend(results.get("files", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
 
         for file_info in files:
             mime = file_info.get("mimeType", "")
@@ -81,6 +91,8 @@ class GdriveDataSource(BaseDataSource):
                     docs = self._extract_pdf(content, file_info)
                 elif file_type == "docx":
                     docs = self._extract_docx(content, file_info)
+                elif file_type == "txt":
+                    docs = self._extract_txt(content, file_info)
                 else:
                     continue
 
@@ -142,6 +154,21 @@ class GdriveDataSource(BaseDataSource):
         finally:
             doc.close()
         return docs
+
+    def _extract_txt(self, content: bytes, file_info: dict) -> List[Document]:
+        text = content.decode("utf-8", errors="replace")
+        if not text.strip():
+            return []
+        return [Document(
+            page_content=text,
+            metadata={
+                "source": f"gdrive://{file_info['id']}",
+                "source_type": "gdrive",
+                "file_name": file_info["name"],
+                "drive_file_id": file_info["id"],
+                "last_modified": file_info.get("modifiedTime", ""),
+            },
+        )]
 
     def _extract_docx(self, content: bytes, file_info: dict) -> List[Document]:
         from docx import Document as DocxDocument

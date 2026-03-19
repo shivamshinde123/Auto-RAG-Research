@@ -1,7 +1,7 @@
 """RAG pipeline with configurable chunking, embeddings, and retrieval."""
 
 import logging
-from typing import List
+from typing import List, Optional, Tuple
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -61,11 +61,29 @@ def get_llm(model_name: str):
     return ChatOpenAI(model=model_name, temperature=0)
 
 
+MAX_CONTEXT_CHARS = 12000
+
+
+def _trim_context(contexts: List[str], max_chars: int = MAX_CONTEXT_CHARS) -> List[str]:
+    """Trim contexts to fit within a character budget, dropping least-relevant (last) chunks."""
+    trimmed = []
+    total = 0
+    for ctx in contexts:
+        if total + len(ctx) > max_chars:
+            remaining = max_chars - total
+            if remaining > 100:
+                trimmed.append(ctx[:remaining])
+            break
+        trimmed.append(ctx)
+        total += len(ctx)
+    return trimmed
+
+
 def run_pipeline(
     documents: List[Document],
-    qa_pairs: List[dict],
+    qa_pairs: Optional[List[dict]],
     config: dict,
-) -> List[dict]:
+) -> Tuple[List[dict], int]:
     """Run the full RAG pipeline: chunk, embed, retrieve, generate.
 
     Args:
@@ -74,9 +92,13 @@ def run_pipeline(
         config: Dict with chunk_size, chunk_overlap, top_k, embedding_model, llm_model.
 
     Returns:
-        List of dicts ready for RAGAS evaluation, each containing:
-        question, answer, contexts, ground_truth.
+        Tuple of (results list, chunk_count). Results are dicts ready for
+        RAGAS evaluation with question, answer, contexts, ground_truth.
     """
+    if not qa_pairs:
+        logger.warning("No QA pairs provided — nothing to evaluate")
+        return [], 0
+
     chunk_size = config.get("chunk_size", 512)
     chunk_overlap = config.get("chunk_overlap", 50)
     top_k = config.get("top_k", 5)
@@ -87,7 +109,7 @@ def run_pipeline(
     chunks = chunk_documents(documents, chunk_size, chunk_overlap)
     if not chunks:
         logger.warning("No chunks produced from %d documents", len(documents))
-        return []
+        return [], 0
 
     # Step 2: Build vector store
     vector_store = build_vector_store(chunks, embedding_model)
@@ -105,6 +127,7 @@ def run_pipeline(
         # Retrieve relevant chunks
         retrieved_docs = retriever.invoke(question)
         contexts = [doc.page_content for doc in retrieved_docs]
+        contexts = _trim_context(contexts)
 
         # Generate answer
         context_text = "\n\n".join(contexts)
@@ -131,4 +154,4 @@ def run_pipeline(
         "Pipeline complete: %d results (model=%s, embedding=%s, top_k=%d)",
         len(results), llm_model, embedding_model, top_k,
     )
-    return results
+    return results, len(chunks)
