@@ -86,13 +86,14 @@ class TestRunPipeline:
             "llm_model": "gpt-4o-mini",
         }
 
-        results = run_pipeline(documents, qa_pairs, config)
+        results, chunk_count = run_pipeline(documents, qa_pairs, config)
 
         assert len(results) == 1
         assert results[0]["question"] == "What is this?"
         assert results[0]["answer"] == "generated answer"
         assert results[0]["ground_truth"] == "test answer"
         assert len(results[0]["contexts"]) == 2
+        assert chunk_count > 0
 
     @patch("src.rag_pipeline.get_llm")
     @patch("src.rag_pipeline.build_vector_store")
@@ -102,8 +103,9 @@ class TestRunPipeline:
         mock_build_vs.return_value = mock_vs
 
         documents = [Document(page_content="text " * 100, metadata={"source": "test"})]
-        results = run_pipeline(documents, [], {"chunk_size": 512})
+        results, chunk_count = run_pipeline(documents, [], {"chunk_size": 512})
         assert results == []
+        assert chunk_count == 0
 
     @patch("src.rag_pipeline.get_llm")
     @patch("src.rag_pipeline.build_vector_store")
@@ -125,10 +127,11 @@ class TestRunPipeline:
             {"question": "Q3", "ground_truth": "A3"},
         ]
 
-        results = run_pipeline(documents, qa_pairs, {"chunk_size": 512})
+        results, chunk_count = run_pipeline(documents, qa_pairs, {"chunk_size": 512})
         assert len(results) == 3
         assert [r["question"] for r in results] == ["Q1", "Q2", "Q3"]
 
     def test_run_pipeline_empty_documents(self):
-        results = run_pipeline([], [{"question": "Q"}], {"chunk_size": 512})
+        results, chunk_count = run_pipeline([], [{"question": "Q"}], {"chunk_size": 512})
         assert results == []
+        assert chunk_count == 0

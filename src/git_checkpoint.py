@@ -4,6 +4,7 @@ import json
 import logging
 import subprocess
 from pathlib import Path
+from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ EXPERIMENT_FILES = [
 ]
 
 
-def _run_git(*args: str) -> tuple[bool, str]:
+def _run_git(*args: str) -> Tuple[bool, str]:
     """Run a git command and return (success, output)."""
     try:
         result = subprocess.run(
@@ -70,17 +71,25 @@ def git_checkpoint(
         logger.warning("No experiment files to stage")
         return
 
+    staging_failed = False
     for f in files_to_stage:
         ok, output = _run_git("add", f)
         if not ok:
-            logger.warning("Failed to stage %s: %s", f, output)
+            logger.error("Failed to stage %s: %s", f, output)
+            staging_failed = True
+
+    if staging_failed:
+        logger.error("Aborting git checkpoint — one or more files failed to stage")
+        return
 
     # Build commit message
     msg = (
         f"experiment {run_number}: composite_score={score:.4f} | "
         f"chunk_size={config.get('chunk_size', '?')}, "
+        f"chunk_overlap={config.get('chunk_overlap', '?')}, "
         f"top_k={config.get('top_k', '?')}, "
-        f"embedding={config.get('embedding_model', '?')}"
+        f"embedding={config.get('embedding_model', '?')}, "
+        f"llm={config.get('llm_model', '?')}"
     )
 
     ok, output = _run_git("commit", "-m", msg)
