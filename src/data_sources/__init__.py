@@ -47,9 +47,12 @@ def get_data_source(config: dict) -> BaseDataSource:
     return cls(config)
 
 
+_ALL_CONNECTOR_MODULES = ("local_pdf", "local_txt", "local_csv", "gdrive", "s3", "notion", "web", "huggingface")
+
+
 def _ensure_registered():
     """Import all connector modules to trigger registration."""
-    if _REGISTRY:
+    if len(_REGISTRY) >= len(_ALL_CONNECTOR_MODULES):
         return
 
     # Import each connector module — their @register decorators populate _REGISTRY
