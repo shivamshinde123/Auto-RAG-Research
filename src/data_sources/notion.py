@@ -47,7 +47,7 @@ class NotionDataSource(BaseDataSource):
         if resp.status_code != 200:
             raise ConnectionError(
                 f"Cannot access Notion database '{database_id}': "
-                f"{resp.status_code} {resp.text[:200]}"
+                f"HTTP {resp.status_code}"
             )
         logger.info("health_check passed: Notion database %s accessible", database_id)
         return True

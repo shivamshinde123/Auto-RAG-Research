@@ -6,6 +6,8 @@ using the Drive API v3 with OAuth2 credentials.
 
 import io
 import logging
+import os
+import stat
 from pathlib import Path
 from typing import List
 
@@ -34,9 +36,13 @@ class GdriveDataSource(BaseDataSource):
                 "Add 'folder_id: <your_folder_id>' to the gdrive [[data_sources]] block."
             )
         creds_path = self.config.get("credentials_path", ".secrets/credentials.json")
-        if not Path(creds_path).exists():
+        # Prevent path traversal by resolving and checking the path stays within expected bounds
+        resolved = Path(creds_path).resolve()
+        if ".." in Path(creds_path).parts:
+            raise ValueError("credentials_path must not contain '..' path components")
+        if not resolved.exists():
             raise ValueError(
-                f"Google Drive credentials not found at '{creds_path}'. "
+                "Google Drive credentials not found. "
                 "Place your OAuth2 credentials.json in .secrets/"
             )
         return True
@@ -51,8 +57,8 @@ class GdriveDataSource(BaseDataSource):
                 pageSize=1,
                 fields="files(id)",
             ).execute()
-        except Exception as e:
-            raise ConnectionError(f"Cannot access Google Drive folder '{folder_id}': {e}")
+        except Exception:
+            raise ConnectionError(f"Cannot access Google Drive folder '{folder_id}': authentication or access error")
         logger.info("health_check passed: Google Drive folder %s accessible", folder_id)
         return True
 
@@ -113,6 +119,10 @@ class GdriveDataSource(BaseDataSource):
         creds_path = self.config.get("credentials_path", ".secrets/credentials.json")
         token_path = self.config.get("token_path", ".secrets/token.json")
 
+        # Validate token_path against path traversal
+        if ".." in Path(token_path).parts:
+            raise ValueError("token_path must not contain '..' path components")
+
         creds = None
         if Path(token_path).exists():
             creds = Credentials.from_authorized_user_file(
@@ -129,8 +139,14 @@ class GdriveDataSource(BaseDataSource):
                     creds_path, ["https://www.googleapis.com/auth/drive.readonly"]
                 )
                 creds = flow.run_local_server(port=0)
-            Path(token_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(token_path).write_text(creds.to_json())
+            token_file = Path(token_path)
+            token_file.parent.mkdir(parents=True, exist_ok=True)
+            token_file.write_text(creds.to_json())
+            # Restrict token file to owner-only read/write
+            try:
+                os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR)
+            except OSError:
+                logger.warning("Could not restrict permissions on token file")
 
         return build("drive", "v3", credentials=creds)
 

@@ -26,10 +26,21 @@ DEFAULT_TIMEOUT = 10
 @register("web")
 class WebDataSource(BaseDataSource):
 
+    ALLOWED_SCHEMES = {"http", "https"}
+
     def validate_config(self) -> bool:
         urls = self.config.get("urls")
         if not urls or not isinstance(urls, list) or len(urls) == 0:
             raise ValueError("web config missing required 'urls' field (must be a non-empty list)")
+        for url in urls:
+            parsed = urlparse(url)
+            if parsed.scheme not in self.ALLOWED_SCHEMES:
+                raise ValueError(
+                    f"URL scheme '{parsed.scheme}' is not allowed. "
+                    f"Only {self.ALLOWED_SCHEMES} are supported."
+                )
+            if not parsed.netloc:
+                raise ValueError(f"URL '{url}' is missing a valid host")
         return True
 
     def health_check(self) -> bool:

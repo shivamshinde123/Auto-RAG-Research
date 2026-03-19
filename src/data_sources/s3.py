@@ -46,8 +46,8 @@ class S3DataSource(BaseDataSource):
         bucket = self.config["bucket"]
         try:
             client.head_bucket(Bucket=bucket)
-        except Exception as e:
-            raise ConnectionError(f"Cannot access S3 bucket '{bucket}': {e}")
+        except Exception:
+            raise ConnectionError(f"Cannot access S3 bucket '{bucket}': authentication or access error")
         logger.info("health_check passed: S3 bucket %s accessible", bucket)
         return True
 
