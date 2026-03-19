@@ -37,6 +37,8 @@ def evaluate(
         faithfulness,
     )
 
+    logger.info("Starting RAGAS evaluation on %d results", len(results))
+
     # Build RAGAS dataset
     ragas_data = {
         "question": [r["question"] for r in results],

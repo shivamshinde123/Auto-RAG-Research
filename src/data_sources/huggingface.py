@@ -21,10 +21,16 @@ class HuggingFaceDataSource(BaseDataSource):
     def validate_config(self) -> bool:
         dataset_name = self.config.get("dataset_name")
         if not dataset_name:
-            raise ValueError("huggingface config missing required 'dataset_name' field")
+            raise ValueError(
+                "huggingface config missing required 'dataset_name' field. "
+                "Add 'dataset_name: <name>' (e.g., dataset_name: squad) to the huggingface [[data_sources]] block."
+            )
         split = self.config.get("split")
         if not split:
-            raise ValueError("huggingface config missing required 'split' field")
+            raise ValueError(
+                "huggingface config missing required 'split' field. "
+                "Add 'split: <split>' (e.g., split: train, split: validation) to the huggingface [[data_sources]] block."
+            )
         return True
 
     def health_check(self) -> bool:

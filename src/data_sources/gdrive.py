@@ -29,7 +29,10 @@ class GdriveDataSource(BaseDataSource):
     def validate_config(self) -> bool:
         folder_id = self.config.get("folder_id")
         if not folder_id:
-            raise ValueError("gdrive config missing required 'folder_id' field")
+            raise ValueError(
+                "gdrive config missing required 'folder_id' field. "
+                "Add 'folder_id: <your_folder_id>' to the gdrive [[data_sources]] block."
+            )
         creds_path = self.config.get("credentials_path", ".secrets/credentials.json")
         if not Path(creds_path).exists():
             raise ValueError(

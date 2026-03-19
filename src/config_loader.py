@@ -1,9 +1,12 @@
 """Parses program.md config file into structured Python objects."""
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -207,7 +210,11 @@ def _build_data_source(raw: dict[str, Any]) -> DataSourceConfig:
     """Build a DataSourceConfig from a raw dict."""
     ds_type = raw.pop("type", None)
     if ds_type is None:
-        raise ValueError("Data source missing required 'type' field")
+        raise ValueError(
+            "Data source missing required 'type' field. "
+            "Each [[data_sources]] block must include 'type: <name>' "
+            "(e.g., type: local_pdf, type: huggingface)."
+        )
 
     enabled = raw.pop("enabled", False)
     return DataSourceConfig(type=ds_type, enabled=enabled, extras=raw)
@@ -228,7 +235,10 @@ def load_config(path: str | Path) -> ProgramConfig:
     """
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
+        raise FileNotFoundError(
+            f"Config file not found: {path}. "
+            "Create a program.md config file or pass a valid path with --config."
+        )
 
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -241,7 +251,10 @@ def _validate_config(config: ProgramConfig) -> None:
     """Validate the parsed config for required fields and sane values."""
     # Must have at least one data source
     if not config.data_sources:
-        raise ValueError("Config must define at least one [[data_sources]] block")
+        raise ValueError(
+            "Config must define at least one [[data_sources]] block. "
+            "Add a [[data_sources]] section to your program.md file."
+        )
 
     # Every data source must have a type
     for i, ds in enumerate(config.data_sources):
