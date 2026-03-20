@@ -69,11 +69,23 @@ Document excerpts:
             content = content.split("\n", 1)[1]
             if content.endswith("```"):
                 content = content[:-3]
-        qa_raw = json.loads(content)
+
+        try:
+            qa_raw = json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error("LLM returned invalid JSON for QA generation: %s\nResponse: %s", e, content[:500])
+            return []
+
+        if not isinstance(qa_raw, list):
+            logger.error("LLM returned %s instead of a JSON array", type(qa_raw).__name__)
+            return []
 
         # Normalize keys: LLM returns "answer", RAGAS expects "ground_truth"
         qa_pairs = []
         for item in qa_raw[:num_pairs]:
+            if "question" not in item or "answer" not in item:
+                logger.warning("Skipping malformed QA pair (missing keys): %s", item)
+                continue
             qa_pairs.append({
                 "question": item["question"],
                 "ground_truth": item["answer"],
@@ -82,8 +94,11 @@ Document excerpts:
         logger.info("Generated %d QA pairs from document content", len(qa_pairs))
         return qa_pairs
 
+    except openai.APIError as e:
+        logger.error("OpenAI API error during QA generation: %s", e, exc_info=True)
+        return []
     except Exception as e:
-        logger.error("Failed to generate QA pairs: %s", e)
+        logger.error("Failed to generate QA pairs: %s", e, exc_info=True)
         return []
 
 

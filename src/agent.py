@@ -124,7 +124,7 @@ def suggest_next_config(
     Returns:
         The suggested config dict.
     """
-    from openai import OpenAI
+    from openai import OpenAI, APIError
 
     history_path = Path(history_path)
     config_output_path = Path(config_output_path)
@@ -144,12 +144,16 @@ def suggest_next_config(
             prompt += f"\n\nNOTE: Your previous suggestion was rejected (attempt {attempt + 1}/{max_retries}). Pick a DIFFERENT config."
 
         # Request JSON-structured response from the LLM
-        response = client.chat.completions.create(
-            model=llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            response_format={"type": "json_object"},
-        )
+        try:
+            response = client.chat.completions.create(
+                model=llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                response_format={"type": "json_object"},
+            )
+        except APIError as e:
+            logger.error("OpenAI API error (attempt %d): %s", attempt + 1, e, exc_info=True)
+            continue
 
         # Parse the agent's JSON response: {analysis, decision, config}
         raw = response.choices[0].message.content

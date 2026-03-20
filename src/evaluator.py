@@ -116,7 +116,7 @@ def evaluate(
             else:
                 scores[canonical_name] = float("nan")
     except Exception as e:
-        logger.error("RAGAS evaluation failed: %s", e)
+        logger.error("RAGAS evaluation failed: %s", e, exc_info=True)
         scores = {name: float("nan") for name in METRIC_NAMES}
 
     scores["composite_score"] = compute_composite(scores)

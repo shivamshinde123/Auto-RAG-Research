@@ -68,9 +68,12 @@ uv sync
 
 ### Set API Key
 
+> **Warning:** Never commit your `.env` file. It is already in `.gitignore`, but double-check before pushing.
+
 ```bash
 # Create a .env file (or export directly)
-echo 'OPENAI_API_KEY=sk-...' > .env
+cp .env.example .env
+# Then edit .env and add your API key
 ```
 
 ### Configure
