@@ -53,7 +53,7 @@ def _search_space_as_dict(search_space) -> dict:
     }
 
 
-def _build_data_source_configs(program_config) -> List[dict]:
+def _build_data_source_configs(program_config) -> list[dict]:
     """Convert DataSourceConfig dataclasses to plain dicts for dataset_loader."""
     configs = []
     for ds in program_config.data_sources:
@@ -62,7 +62,7 @@ def _build_data_source_configs(program_config) -> List[dict]:
     return configs
 
 
-def _load_existing_history(history_path: Path) -> List[dict]:
+def _load_existing_history(history_path: Path) -> list[dict]:
     """Load existing experiment history for resume support."""
     if not history_path.exists():
         return []
@@ -203,7 +203,7 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
             logger.info("Config: %s", json.dumps(current_config))
 
             # Run RAG pipeline: chunk docs -> build vector store -> retrieve -> generate answers
-            results = run_pipeline(documents, qa_pairs, current_config)
+            results, chunk_count = run_pipeline(documents, qa_pairs, current_config)
 
             if not results:
                 logger.warning("Pipeline returned no results, skipping evaluation")

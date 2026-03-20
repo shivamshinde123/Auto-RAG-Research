@@ -125,7 +125,7 @@ uv run python main.py --resume
 ### View Results
 
 ```bash
-uv run mlflow ui --backend-store-uri mlruns
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
 # Open http://localhost:5000
 ```
 

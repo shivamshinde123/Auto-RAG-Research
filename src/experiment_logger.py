@@ -25,6 +25,8 @@ class ExperimentLogger:
     def _setup_experiment(self):
         """Create or get the MLflow experiment."""
         try:
+            # MLflow 3.x requires SQL-based backend for full UI functionality
+            mlflow.set_tracking_uri("sqlite:///mlflow.db")
             mlflow.set_experiment(self.experiment_name)
             logger.info("MLflow experiment: %s", self.experiment_name)
         except Exception as e:

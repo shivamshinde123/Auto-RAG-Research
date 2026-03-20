@@ -29,7 +29,7 @@ secondary_metric: faithfulness
 min_threshold: 0.80
 
 ## Constraints
-max_iterations: 1
+max_iterations: 2
 max_cost_usd: 5.0
 
 ## Experiment
