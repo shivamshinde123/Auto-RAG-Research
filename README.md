@@ -1,6 +1,6 @@
 # AutoRAGResearch
 
-Autonomous RAG pipeline optimization system. Inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) — an LLM agent iteratively tunes RAG hyperparameters (chunking, embeddings, retrieval) and evaluates with RAGAS metrics until a target quality threshold is reached.
+Autonomous RAG pipeline optimization system. Inspired by concept of [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) — an LLM agent iteratively tunes RAG hyperparameters (chunking, embeddings, retrieval) and evaluates with RAGAS metrics until a target quality threshold is reached.
 
 ## How It Works
 
