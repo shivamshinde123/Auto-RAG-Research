@@ -1,4 +1,4 @@
-"""Tests for src/config_loader.py."""
+"""Tests for config_loader (program.md parsing, validation, type coercion)."""
 
 import pytest
 from pathlib import Path
@@ -11,7 +11,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 @pytest.fixture
 def valid_config_path(tmp_path):
-    """Create a valid program.md config file."""
+    """Create a valid program.md config file with PDF data source."""
     config_text = """\
 ## Data Sources
 
@@ -20,17 +20,8 @@ type: local_pdf
 path: data/pdfs/
 enabled: true
 
-[[data_sources]]
-type: local_txt
-path: data/txt/
-enabled: false
-
-[[data_sources]]
-type: web
-urls:
-  - https://example.com/docs
-  - https://example.com/blog
-enabled: true
+## QA Generation
+num_qa_pairs: 15
 
 ## Search Space
 chunk_size: [256, 512, 1024]
@@ -59,15 +50,13 @@ git_checkpoints: true
 
 @pytest.fixture
 def minimal_config_path(tmp_path):
-    """Create a minimal valid config with just one data source."""
+    """Create a minimal valid config with just one PDF data source."""
     config_text = """\
 ## Data Sources
 
 [[data_sources]]
-type: huggingface
-dataset_name: squad
-split: train
-sample_size: 10
+type: local_pdf
+path: data/pdfs/
 enabled: true
 
 ## Search Space
@@ -130,7 +119,7 @@ class TestLoadConfig:
         config = load_config(valid_config_path)
 
         assert isinstance(config, ProgramConfig)
-        assert len(config.data_sources) == 3
+        assert len(config.data_sources) == 1
 
     def test_data_sources_parsed(self, valid_config_path):
         config = load_config(valid_config_path)
@@ -140,18 +129,10 @@ class TestLoadConfig:
         assert pdf_source.enabled is True
         assert pdf_source.get("path") == "data/pdfs/"
 
-        txt_source = config.data_sources[1]
-        assert txt_source.type == "local_txt"
-        assert txt_source.enabled is False
-
-    def test_web_source_multiline_urls(self, valid_config_path):
+    def test_qa_generation_parsed(self, valid_config_path):
         config = load_config(valid_config_path)
 
-        web_source = config.data_sources[2]
-        assert web_source.type == "web"
-        assert web_source.enabled is True
-        urls = web_source.get("urls")
-        assert urls == ["https://example.com/docs", "https://example.com/blog"]
+        assert config.qa_generation.num_qa_pairs == 15
 
     def test_search_space_parsed(self, valid_config_path):
         config = load_config(valid_config_path)
@@ -187,9 +168,7 @@ class TestLoadConfig:
         config = load_config(minimal_config_path)
 
         assert len(config.data_sources) == 1
-        assert config.data_sources[0].type == "huggingface"
-        assert config.data_sources[0].get("dataset_name") == "squad"
-        assert config.data_sources[0].get("sample_size") == 10
+        assert config.data_sources[0].type == "local_pdf"
         assert config.constraints.max_iterations == 5
         assert config.experiment.git_checkpoints is False
 

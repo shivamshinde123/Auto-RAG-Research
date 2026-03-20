@@ -1,4 +1,4 @@
-"""Tests for experiment_logger module."""
+"""Tests for the MLflow experiment logger (run logging, error handling)."""
 
 from unittest.mock import MagicMock, patch
 

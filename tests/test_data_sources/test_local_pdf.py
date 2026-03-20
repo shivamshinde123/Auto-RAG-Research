@@ -1,4 +1,4 @@
-"""Tests for local_pdf data source connector."""
+"""Tests for the local PDF connector (config validation, health check, parsing, fallback)."""
 
 import pytest
 from pathlib import Path

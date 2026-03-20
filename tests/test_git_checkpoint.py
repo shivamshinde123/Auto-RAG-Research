@@ -1,4 +1,4 @@
-"""Tests for git_checkpoint module."""
+"""Tests for git checkpoint (auto-commit on score improvement, file staging)."""
 
 import json
 from pathlib import Path

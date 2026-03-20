@@ -1,9 +1,14 @@
-"""MLflow experiment logger for tracking RAG pipeline optimization runs."""
+"""MLflow experiment logger for tracking RAG pipeline optimization runs.
+
+Each experiment iteration is logged as an MLflow run with hyperparameters,
+RAGAS scores, cost data, and config/reasoning artifacts.
+"""
 
 import json
 import logging
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import mlflow
 
@@ -31,7 +36,7 @@ class ExperimentLogger:
         scores: dict,
         run_number: int,
         is_best: bool = False,
-        reasoning: str | None = None,
+        reasoning: Optional[str] = None,
     ):
         """Log a single experiment run to MLflow.
 
@@ -58,21 +63,31 @@ class ExperimentLogger:
                 mlflow.set_tag("is_best", str(is_best))
 
                 # Log config as artifact
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".json", delete=False
-                ) as f:
-                    json.dump(config, f, indent=2)
-                    f.flush()
-                    mlflow.log_artifact(f.name, "config")
-
-                # Log reasoning if provided
-                if reasoning:
+                config_tmp = None
+                reasoning_tmp = None
+                try:
                     with tempfile.NamedTemporaryFile(
-                        mode="w", suffix=".md", delete=False
+                        mode="w", suffix=".json", delete=False
                     ) as f:
-                        f.write(reasoning)
+                        config_tmp = f.name
+                        json.dump(config, f, indent=2)
                         f.flush()
-                        mlflow.log_artifact(f.name, "reasoning")
+                    mlflow.log_artifact(config_tmp, "config")
+
+                    # Log reasoning if provided
+                    if reasoning:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w", suffix=".md", delete=False
+                        ) as f:
+                            reasoning_tmp = f.name
+                            f.write(reasoning)
+                            f.flush()
+                        mlflow.log_artifact(reasoning_tmp, "reasoning")
+                finally:
+                    if config_tmp:
+                        Path(config_tmp).unlink(missing_ok=True)
+                    if reasoning_tmp:
+                        Path(reasoning_tmp).unlink(missing_ok=True)
 
             logger.info(
                 "Logged run %d to MLflow (is_best=%s)", run_number, is_best

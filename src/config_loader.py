@@ -4,33 +4,45 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+
+logger = logging.getLogger(__name__)
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class DataSourceConfig:
+    """Config for a single data source (e.g., local_pdf).
+
+    Known fields (type, enabled) are stored directly; any extra
+    source-specific fields (path, etc.) go into the extras dict.
+    """
+
     type: str
     enabled: bool = False
-    # All other fields are stored as extras
-    extras: dict[str, Any] = field(default_factory=dict)
+    extras: Dict[str, Any] = field(default_factory=dict)
 
     def get(self, key: str, default: Any = None) -> Any:
+        """Retrieve a source-specific config value from extras."""
         return self.extras.get(key, default)
 
 
 @dataclass
 class SearchSpace:
-    chunk_size: list[int] = field(default_factory=lambda: [512])
-    chunk_overlap: list[int] = field(default_factory=lambda: [50])
-    top_k: list[int] = field(default_factory=lambda: [5])
-    embedding_model: list[str] = field(default_factory=lambda: ["all-MiniLM-L6-v2"])
-    llm_model: list[str] = field(default_factory=lambda: ["gpt-4o-mini"])
+    """Hyperparameter search space — each field is a list of allowed values."""
+
+    chunk_size: List[int] = field(default_factory=lambda: [512])
+    chunk_overlap: List[int] = field(default_factory=lambda: [50])
+    top_k: List[int] = field(default_factory=lambda: [5])
+    embedding_model: List[str] = field(default_factory=lambda: ["all-MiniLM-L6-v2"])
+    llm_model: List[str] = field(default_factory=lambda: ["gpt-4o-mini"])
 
 
 @dataclass
 class OptimizationTarget:
+    """Which RAGAS metric to optimize and when to stop."""
+
     primary_metric: str = "context_recall"
     secondary_metric: str = "faithfulness"
     min_threshold: float = 0.80
@@ -38,52 +50,64 @@ class OptimizationTarget:
 
 @dataclass
 class Constraints:
+    """Budget and iteration limits for the experiment loop."""
+
     max_iterations: int = 20
     max_cost_usd: float = 5.0
 
 
 @dataclass
 class ExperimentConfig:
+    """Experiment metadata — name and git checkpoint toggle."""
+
     experiment_name: str = "autoragresearch_run_1"
     git_checkpoints: bool = True
 
 
 @dataclass
+class QAGenerationConfig:
+    """How many QA pairs to auto-generate from PDF content."""
+
+    num_qa_pairs: int = 20
+
+
+@dataclass
 class ProgramConfig:
-    data_sources: list[DataSourceConfig] = field(default_factory=list)
+    """Top-level config container — aggregates all sections from program.md."""
+
+    data_sources: List[DataSourceConfig] = field(default_factory=list)
     search_space: SearchSpace = field(default_factory=SearchSpace)
     optimization: OptimizationTarget = field(default_factory=OptimizationTarget)
     constraints: Constraints = field(default_factory=Constraints)
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+    qa_generation: QAGenerationConfig = field(default_factory=QAGenerationConfig)
 
 
 def _parse_value(raw: str) -> Any:
     """Parse a raw string value into the appropriate Python type."""
     raw = raw.strip()
 
-    # Boolean
+    # Try types in order: bool -> int -> float -> list -> string
     if raw.lower() == "true":
         return True
     if raw.lower() == "false":
         return False
 
-    # Integer
     try:
         return int(raw)
     except ValueError:
         pass
 
-    # Float
     try:
         return float(raw)
     except ValueError:
         pass
 
-    # List: [item1, item2, item3]
+    # Bracket-delimited list: [item1, item2, item3]
     if raw.startswith("[") and raw.endswith("]"):
         inner = raw[1:-1]
         items = [item.strip().strip("'\"") for item in inner.split(",")]
-        # Try to convert items to int/float
+        # Attempt numeric conversion for each list item
         parsed_items = []
         for item in items:
             try:
@@ -95,25 +119,26 @@ def _parse_value(raw: str) -> Any:
                     parsed_items.append(item)
         return parsed_items
 
+    # Fall through: treat as plain string
     return raw
 
 
-def _parse_lines(lines: list[str]) -> ProgramConfig:
+def _parse_lines(lines: List[str]) -> ProgramConfig:
     """Parse the lines of a program.md file into a ProgramConfig."""
     config = ProgramConfig()
-    current_section: str | None = None
-    current_data_source: dict[str, Any] | None = None
-    multiline_key: str | None = None
-    multiline_list: list[str] | None = None
+    current_section: Optional[str] = None
+    current_data_source: Optional[Dict[str, Any]] = None
+    multiline_key: Optional[str] = None
+    multiline_list: Optional[List[str]] = None
 
+    # State machine: walk lines, switching on current section header
     for line in lines:
         stripped = line.strip()
 
-        # Skip empty lines
         if not stripped:
             continue
 
-        # Section headers: ## Section Name (must check before comments)
+        # Match markdown H2 headers (## Section Name) to determine current section
         section_match = re.match(r"^##\s+(.+)$", stripped)
         if section_match:
             # Flush any in-progress multiline list
@@ -182,15 +207,28 @@ def _parse_lines(lines: list[str]) -> ProgramConfig:
             elif current_section == "search space":
                 if hasattr(config.search_space, key):
                     setattr(config.search_space, key, value if isinstance(value, list) else [value])
+                else:
+                    logger.warning("Unrecognized search space key '%s' — ignoring", key)
             elif current_section == "optimization target":
                 if hasattr(config.optimization, key):
                     setattr(config.optimization, key, value)
+                else:
+                    logger.warning("Unrecognized optimization key '%s' — ignoring", key)
             elif current_section == "constraints":
                 if hasattr(config.constraints, key):
                     setattr(config.constraints, key, value)
+                else:
+                    logger.warning("Unrecognized constraints key '%s' — ignoring", key)
             elif current_section == "experiment":
                 if hasattr(config.experiment, key):
                     setattr(config.experiment, key, value)
+                else:
+                    logger.warning("Unrecognized experiment key '%s' — ignoring", key)
+            elif current_section == "qa generation":
+                if hasattr(config.qa_generation, key):
+                    setattr(config.qa_generation, key, value)
+                else:
+                    logger.warning("Unrecognized qa generation key '%s' — ignoring", key)
             continue
 
     # Flush final multiline list
@@ -206,7 +244,7 @@ def _parse_lines(lines: list[str]) -> ProgramConfig:
     return config
 
 
-def _build_data_source(raw: dict[str, Any]) -> DataSourceConfig:
+def _build_data_source(raw: Dict[str, Any]) -> DataSourceConfig:
     """Build a DataSourceConfig from a raw dict."""
     ds_type = raw.pop("type", None)
     if ds_type is None:
@@ -220,7 +258,7 @@ def _build_data_source(raw: dict[str, Any]) -> DataSourceConfig:
     return DataSourceConfig(type=ds_type, enabled=enabled, extras=raw)
 
 
-def load_config(path: str | Path) -> ProgramConfig:
+def load_config(path: Union[str, Path]) -> ProgramConfig:
     """Load and parse a program.md config file.
 
     Args:

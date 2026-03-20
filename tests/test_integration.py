@@ -1,7 +1,8 @@
-"""End-to-end integration test with HuggingFace SQuAD dataset.
+"""End-to-end integration test for the full experiment loop.
 
-Requires OPENAI_API_KEY to run. Skipped automatically if not set.
-Run with: pytest tests/test_integration.py -m integration
+Uses mocks for all external APIs (OpenAI, RAGAS) so it runs without
+API keys. Tests the full flow: config -> load docs -> run pipeline ->
+evaluate -> agent suggests next config -> repeat.
 """
 
 import json
@@ -26,11 +27,12 @@ def test_config_path(tmp_path):
 ## Data Sources
 
 [[data_sources]]
-type: huggingface
+type: local_pdf
+path: data/pdfs/
 enabled: true
-dataset_name: squad
-split: validation
-sample_size: 5
+
+## QA Generation
+num_qa_pairs: 5
 
 ## Search Space
 chunk_size: [512]
@@ -64,11 +66,10 @@ class TestIntegrationMocked:
         """Test the full experiment flow with mocked external calls."""
         monkeypatch.chdir(tmp_path)
 
-        # Mock the huggingface dataset loading
         from langchain_core.documents import Document
 
         mock_docs = [
-            Document(page_content=f"Context about topic {i}.", metadata={"source": "squad", "source_type": "huggingface"})
+            Document(page_content=f"Context about topic {i}.", metadata={"source": "test.pdf", "source_type": "local_pdf"})
             for i in range(5)
         ]
         mock_qa_pairs = [
@@ -78,6 +79,7 @@ class TestIntegrationMocked:
 
         with (
             patch("src.dataset_loader.get_data_source") as mock_get_ds,
+            patch("src.dataset_loader._generate_qa_pairs") as mock_gen_qa,
             patch("src.rag_pipeline.build_vector_store") as mock_build_vs,
             patch("src.rag_pipeline.get_llm") as mock_get_llm,
             patch("src.evaluator.evaluate") as mock_evaluate,
@@ -85,8 +87,11 @@ class TestIntegrationMocked:
         ):
             # Mock data source
             mock_source = MagicMock()
-            mock_source.load_with_qa.return_value = (mock_docs, mock_qa_pairs)
+            mock_source.load.return_value = mock_docs
             mock_get_ds.return_value = mock_source
+
+            # Mock QA generation
+            mock_gen_qa.return_value = mock_qa_pairs
 
             # Mock vector store
             mock_retriever = MagicMock()
@@ -100,7 +105,7 @@ class TestIntegrationMocked:
             mock_llm.invoke.return_value = MagicMock(content="mocked answer")
             mock_get_llm.return_value = mock_llm
 
-            # Mock evaluator — return scores above threshold on 2nd iteration
+            # Mock evaluator -- return scores above threshold on 2nd iteration
             mock_evaluate.side_effect = [
                 {
                     "faithfulness": 0.80,
@@ -158,27 +163,3 @@ class TestIntegrationMocked:
 
             # Verify MLflow logger was called
             assert mock_exp_logger.log_run.call_count >= 1
-
-
-@requires_openai
-class TestIntegrationLive:
-    """Live integration test — requires OPENAI_API_KEY."""
-
-    def test_single_iteration_live(self, test_config_path, tmp_path, monkeypatch):
-        """Run a single real iteration with SQuAD data."""
-        monkeypatch.chdir(tmp_path)
-
-        # Override to 1 iteration
-        config_text = Path(test_config_path).read_text()
-        config_text = config_text.replace("max_iterations: 2", "max_iterations: 1")
-        Path(test_config_path).write_text(config_text)
-
-        from main import run_experiment
-        run_experiment(test_config_path)
-
-        # Check outputs
-        history = tmp_path / "experiment_history.jsonl"
-        assert history.exists()
-        entry = json.loads(history.read_text().splitlines()[0])
-        assert "composite_score" in entry
-        assert entry["composite_score"] > 0

@@ -1,4 +1,4 @@
-"""Tests for evaluator module."""
+"""Tests for the RAGAS evaluator (composite scoring, metric aggregation, error handling)."""
 
 import math
 import sys

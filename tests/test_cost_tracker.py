@@ -1,4 +1,4 @@
-"""Tests for cost_tracker module."""
+"""Tests for the CostTracker class (per-iteration cost tracking, budget limits)."""
 
 from src.cost_tracker import CostTracker
 

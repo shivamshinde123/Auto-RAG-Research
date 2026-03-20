@@ -18,8 +18,15 @@ logger = logging.getLogger(__name__)
 
 @register("local_pdf")
 class LocalPdfDataSource(BaseDataSource):
+    """Reads all .pdf files from a configured directory.
+
+    Uses PyMuPDF (fitz) as the primary parser, with pdfplumber as a
+    fallback if PyMuPDF fails on a particular file. Each PDF page
+    becomes one LangChain Document.
+    """
 
     def validate_config(self) -> bool:
+        """Ensure the 'path' field is present in the config."""
         path = self.config.get("path")
         if not path:
             raise ValueError("local_pdf config missing required 'path' field")
@@ -28,6 +35,7 @@ class LocalPdfDataSource(BaseDataSource):
         return True
 
     def health_check(self) -> bool:
+        """Verify the PDF directory exists and contains at least one .pdf file."""
         self.validate_config()
         path = Path(self.config["path"])
         if not path.exists():
@@ -41,6 +49,11 @@ class LocalPdfDataSource(BaseDataSource):
         return True
 
     def load(self) -> List[Document]:
+        """Load all PDF files from the configured directory.
+
+        Tries PyMuPDF first; falls back to pdfplumber if PyMuPDF fails.
+        Returns one Document per page with source metadata.
+        """
         self.validate_config()
         path = Path(self.config["path"])
         documents: List[Document] = []
@@ -52,6 +65,7 @@ class LocalPdfDataSource(BaseDataSource):
 
         for pdf_path in pdf_files:
             try:
+                # Primary parser: PyMuPDF (fast, handles most PDFs well)
                 docs = self._load_with_pymupdf(pdf_path)
                 documents.extend(docs)
             except Exception as e:
@@ -59,6 +73,7 @@ class LocalPdfDataSource(BaseDataSource):
                     "PyMuPDF failed on %s (%s), trying pdfplumber", pdf_path.name, e
                 )
                 try:
+                    # Fallback parser: pdfplumber (slower but handles edge cases)
                     docs = self._load_with_pdfplumber(pdf_path)
                     documents.extend(docs)
                 except Exception as e2:
@@ -70,6 +85,7 @@ class LocalPdfDataSource(BaseDataSource):
         return documents
 
     def _load_with_pymupdf(self, pdf_path: Path) -> List[Document]:
+        """Extract text from each page using PyMuPDF (fitz)."""
         import fitz
 
         docs: List[Document] = []
@@ -78,6 +94,7 @@ class LocalPdfDataSource(BaseDataSource):
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 text = page.get_text()
+                # Skip blank pages
                 if text.strip():
                     docs.append(
                         Document(
@@ -96,6 +113,7 @@ class LocalPdfDataSource(BaseDataSource):
         return docs
 
     def _load_with_pdfplumber(self, pdf_path: Path) -> List[Document]:
+        """Extract text from each page using pdfplumber (fallback parser)."""
         import pdfplumber
 
         docs: List[Document] = []

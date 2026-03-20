@@ -1,4 +1,4 @@
-"""Tests for data source base class and registry."""
+"""Tests for data source ABC enforcement and connector registry."""
 
 import pytest
 from langchain_core.documents import Document
@@ -31,13 +31,6 @@ class TestRegistry:
 
         expected_types = {
             "local_pdf",
-            "local_txt",
-            "local_csv",
-            "gdrive",
-            "s3",
-            "notion",
-            "web",
-            "huggingface",
         }
         assert expected_types == set(_REGISTRY.keys())
 

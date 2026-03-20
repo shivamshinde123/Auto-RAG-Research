@@ -2,16 +2,27 @@
 
 import logging
 import math
-from typing import List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
+# The four RAGAS metrics we track for every experiment iteration
 METRIC_NAMES = [
     "faithfulness",
     "answer_relevancy",
     "context_precision",
     "context_recall",
 ]
+
+# RAGAS 0.4.x uses different internal column names for some metrics.
+# This map translates our canonical names to the column names in the
+# pandas DataFrame returned by ragas.evaluate().to_pandas().
+_RAGAS_METRIC_NAME_MAP = {
+    "faithfulness": "faithfulness",
+    "answer_relevancy": "answer_relevancy",
+    "context_precision": "llm_context_precision_with_reference",
+    "context_recall": "context_recall",
+}
 
 
 def evaluate(
@@ -28,29 +39,42 @@ def evaluate(
         Dict with faithfulness, answer_relevancy, context_precision,
         context_recall, and composite_score. Failed metrics return NaN.
     """
-    from datasets import Dataset  # noqa: F811
-    from ragas import evaluate as ragas_evaluate  # noqa: F811
-    from ragas.metrics import (  # noqa: F811
-        answer_relevancy,
-        context_precision,
-        context_recall,
-        faithfulness,
+    if not results:
+        logger.warning("No results to evaluate — returning NaN scores")
+        scores = {name: float("nan") for name in METRIC_NAMES}
+        scores["composite_score"] = float("nan")
+        return scores
+
+    # RAGAS 0.4.x API: use EvaluationDataset with SingleTurnSample objects
+    from ragas import EvaluationDataset, SingleTurnSample
+    from ragas import evaluate as ragas_evaluate
+    from ragas.metrics import (
+        _AnswerRelevancy,
+        _Faithfulness,
+        _LLMContextPrecisionWithReference,
+        _LLMContextRecall,
     )
 
-    logger.info("Starting RAGAS evaluation on %d results", len(results))
+    # Convert pipeline results into RAGAS sample format
+    samples = []
+    for r in results:
+        samples.append(SingleTurnSample(
+            user_input=r["question"],
+            response=r["answer"],
+            retrieved_contexts=r["contexts"],
+            reference=r["ground_truth"],
+        ))
+    dataset = EvaluationDataset(samples=samples)
 
-    # Build RAGAS dataset
-    ragas_data = {
-        "question": [r["question"] for r in results],
-        "answer": [r["answer"] for r in results],
-        "contexts": [r["contexts"] for r in results],
-        "ground_truth": [r["ground_truth"] for r in results],
-    }
-    dataset = Dataset.from_dict(ragas_data)
+    # Note: metric classes use underscore prefix in RAGAS 0.4.x
+    metrics = [
+        _Faithfulness(),
+        _AnswerRelevancy(),
+        _LLMContextPrecisionWithReference(),
+        _LLMContextRecall(),
+    ]
 
-    metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
-
-    # Configure judge LLM
+    # Configure judge LLM and embeddings for RAGAS evaluation
     llm = None
     embeddings = None
     if judge_model == "ollama":
@@ -62,6 +86,15 @@ def evaluate(
         except Exception as e:
             logger.warning("Failed to set up Ollama judge, falling back to OpenAI: %s", e)
 
+    # Explicitly provide OpenAI embeddings — RAGAS's internal auto-init can fail
+    # due to version mismatches between langchain-openai and ragas
+    if embeddings is None:
+        try:
+            from langchain_openai import OpenAIEmbeddings
+            embeddings = OpenAIEmbeddings()
+        except Exception as e:
+            logger.warning("Failed to create OpenAI embeddings: %s", e)
+
     try:
         kwargs = {"dataset": dataset, "metrics": metrics}
         if llm is not None:
@@ -70,10 +103,18 @@ def evaluate(
             kwargs["embeddings"] = embeddings
 
         ragas_result = ragas_evaluate(**kwargs)
+
+        # RAGAS 0.4.x returns an EvaluationResult object (not a dict).
+        # Convert to pandas DataFrame and compute mean per metric column.
+        df = ragas_result.to_pandas()
         scores = {}
-        for name in METRIC_NAMES:
-            val = ragas_result.get(name, float("nan"))
-            scores[name] = val if val is not None else float("nan")
+        for canonical_name in METRIC_NAMES:
+            ragas_name = _RAGAS_METRIC_NAME_MAP[canonical_name]
+            if ragas_name in df.columns:
+                val = df[ragas_name].mean()
+                scores[canonical_name] = val if val is not None else float("nan")
+            else:
+                scores[canonical_name] = float("nan")
     except Exception as e:
         logger.error("RAGAS evaluation failed: %s", e)
         scores = {name: float("nan") for name in METRIC_NAMES}
@@ -90,7 +131,7 @@ def evaluate(
 
 def compute_composite(
     scores: dict,
-    weights: dict | None = None,
+    weights: Optional[dict] = None,
 ) -> float:
     """Compute weighted average of metric scores, ignoring NaN values.
 

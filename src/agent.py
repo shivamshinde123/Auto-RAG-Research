@@ -8,11 +8,12 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
 
-def _load_history(history_path: Path) -> list[dict]:
+def _load_history(history_path: Path) -> List[dict]:
     """Load experiment history from JSONL file."""
     if not history_path.exists():
         return []
@@ -24,16 +25,18 @@ def _load_history(history_path: Path) -> list[dict]:
     return entries
 
 
-def _build_prompt(search_space: dict, history: list[dict], current_scores: dict) -> str:
+def _build_prompt(search_space: dict, history: List[dict], current_scores: dict) -> str:
     """Build the agent prompt for suggesting the next config."""
     history_text = ""
     if history:
         for entry in history:
             cfg = entry.get("config", {})
             scores = entry.get("scores", {})
+            cs = entry.get('composite_score')
+            cs_str = f"{cs:.4f}" if isinstance(cs, (int, float)) else "?"
             history_text += (
                 f"  Iteration {entry.get('iteration', '?')}: "
-                f"composite={entry.get('composite_score', '?'):.4f} | "
+                f"composite={cs_str} | "
                 f"config={json.dumps(cfg)} | "
                 f"scores={json.dumps({k: round(v, 4) if isinstance(v, float) else v for k, v in scores.items()})}\n"
             )
@@ -80,15 +83,16 @@ Respond in this exact JSON format:
 def _validate_config(config: dict, search_space: dict) -> bool:
     """Validate that config values are within the search space."""
     for key, allowed in search_space.items():
-        if key in config:
-            if config[key] not in allowed:
-                raise ValueError(
-                    f"Config {key}={config[key]} not in allowed values: {allowed}"
-                )
+        if key not in config:
+            raise ValueError(f"Config missing required key: '{key}'")
+        if config[key] not in allowed:
+            raise ValueError(
+                f"Config {key}={config[key]} not in allowed values: {allowed}"
+            )
     return True
 
 
-def _is_duplicate(config: dict, history: list[dict]) -> bool:
+def _is_duplicate(config: dict, history: List[dict]) -> bool:
     """Check if a config has already been tried."""
     config_str = json.dumps(config, sort_keys=True)
     for entry in history:
@@ -98,11 +102,11 @@ def _is_duplicate(config: dict, history: list[dict]) -> bool:
 
 
 def suggest_next_config(
-    history_path: str | Path,
+    history_path: Union[str, Path],
     search_space: dict,
     current_scores: dict,
-    config_output_path: str | Path = "experiment_config.json",
-    notes_path: str | Path = "agent_notes.md",
+    config_output_path: Union[str, Path] = "experiment_config.json",
+    notes_path: Union[str, Path] = "agent_notes.md",
     llm_model: str = "gpt-4o-mini",
     max_retries: int = 3,
 ) -> dict:
@@ -131,14 +135,15 @@ def suggest_next_config(
 
     client = OpenAI()
 
-    logger.info("Requesting next config from agent (model=%s, history=%d entries)", llm_model, len(history))
-
+    # Retry loop: agent may suggest invalid or duplicate configs
     for attempt in range(max_retries):
         prompt = _build_prompt(search_space, history, current_scores)
 
+        # On retries, append a warning so the LLM knows to try something different
         if attempt > 0:
             prompt += f"\n\nNOTE: Your previous suggestion was rejected (attempt {attempt + 1}/{max_retries}). Pick a DIFFERENT config."
 
+        # Request JSON-structured response from the LLM
         response = client.chat.completions.create(
             model=llm_model,
             messages=[{"role": "user", "content": prompt}],
@@ -146,30 +151,36 @@ def suggest_next_config(
             response_format={"type": "json_object"},
         )
 
+        # Parse the agent's JSON response: {analysis, decision, config}
         raw = response.choices[0].message.content
-        parsed = json.loads(raw)
-        config = parsed["config"]
+        try:
+            parsed = json.loads(raw)
+            config = parsed["config"]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning("Agent returned malformed response (attempt %d): %s", attempt + 1, e)
+            continue
         analysis = parsed.get("analysis", "")
         decision = parsed.get("decision", "")
 
-        # Validate
+        # Reject configs with values outside the search space
         try:
             _validate_config(config, search_space)
         except ValueError as e:
             logger.warning("Agent suggested invalid config (attempt %d): %s", attempt + 1, e)
             continue
 
+        # Reject configs that have already been tried
         if _is_duplicate(config, history):
             logger.warning("Agent suggested duplicate config (attempt %d)", attempt + 1)
             continue
 
-        # Write experiment_config.json
+        # Write the accepted config for the next iteration to pick up
         config_output_path.write_text(
             json.dumps(config, indent=2) + "\n", encoding="utf-8"
         )
         logger.info("Wrote next config to %s", config_output_path)
 
-        # Append to agent_notes.md
+        # Append the agent's reasoning chain to agent_notes.md for auditability
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         notes_entry = (
             f"\n## Iteration {iteration} \u2014 {timestamp}\n"

@@ -1,4 +1,8 @@
-"""Git checkpoint for auto-committing when composite score improves."""
+"""Git checkpoint for auto-committing when composite score improves.
+
+Saves the best config to best_config.json and creates a git commit
+with experiment metadata in the commit message.
+"""
 
 import json
 import logging
@@ -8,6 +12,7 @@ from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
+# Files to stage when creating a git checkpoint commit
 EXPERIMENT_FILES = [
     "best_config.json",
     "experiment_history.jsonl",

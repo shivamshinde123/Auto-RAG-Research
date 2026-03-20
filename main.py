@@ -11,8 +11,6 @@ import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -25,6 +23,7 @@ logger = logging.getLogger("autorag")
 
 
 def _setup_logging(verbose: bool = False):
+    """Configure root logger with timestamp, module name, and level."""
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -147,16 +146,19 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
     notes_path = Path("agent_notes.md")
     best_config_path = Path("best_config.json")
 
-    # Load documents
+    # Load documents and generate QA pairs from PDF content
     ds_configs = _build_data_source_configs(program_config)
-    documents, qa_pairs = load_documents(ds_configs)
+    documents, qa_pairs = load_documents(
+        ds_configs,
+        num_qa_pairs=program_config.qa_generation.num_qa_pairs,
+    )
 
     if not documents:
         logger.error("No documents loaded — cannot run pipeline")
         sys.exit(1)
 
     if not qa_pairs:
-        logger.error("No QA pairs available — cannot evaluate. Enable a huggingface data source.")
+        logger.error("No QA pairs generated — check your PDF content")
         sys.exit(1)
 
     # Initialize experiment logger and cost tracker
@@ -188,40 +190,34 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
 
     logger.info("Starting experiment loop (iterations %d-%d)", start_iteration, max_iterations)
 
+    # Main experiment loop: run pipeline -> evaluate -> agent suggests next config -> repeat
     try:
         for iteration in range(start_iteration, max_iterations + 1):
             logger.info("=" * 60)
             logger.info("Iteration %d / %d", iteration, max_iterations)
 
-            # Read current config
+            # Read current hyperparameter config (written by agent or initial random pick)
             current_config = json.loads(
                 config_output_path.read_text(encoding="utf-8")
             )
             logger.info("Config: %s", json.dumps(current_config))
 
-            # Run RAG pipeline
-            results, chunk_count = run_pipeline(documents, qa_pairs, current_config)
+            # Run RAG pipeline: chunk docs -> build vector store -> retrieve -> generate answers
+            results = run_pipeline(documents, qa_pairs, current_config)
 
             if not results:
                 logger.warning("Pipeline returned no results, skipping evaluation")
                 cost_tracker.end_iteration()
                 continue
 
-            # Estimate pipeline cost (embedding + LLM generation per QA pair)
-            llm_model = current_config.get("llm_model", "gpt-4o-mini")
-            emb_model = current_config.get("embedding_model", "text-embedding-ada-002")
-            # ~200 tokens per chunk for embedding, ~500 in/200 out per QA
-            cost_tracker.add_cost(emb_model, input_tokens=chunk_count * 200)
-            cost_tracker.add_cost(llm_model, input_tokens=len(results) * 500, output_tokens=len(results) * 200)
-
-            # Evaluate
+            # Evaluate answers against ground truth using RAGAS metrics
             scores = evaluate(results)
             # Estimate evaluation cost (judge LLM calls)
             cost_tracker.add_cost("gpt-4o-mini", input_tokens=len(results) * 800, output_tokens=len(results) * 100)
             composite = scores.get("composite_score", -1)
             logger.info("Scores: composite=%.4f", composite)
 
-            # Append to history
+            # Append this iteration's results to the JSONL history file
             history_entry = {
                 "iteration": iteration,
                 "config": current_config,
@@ -232,10 +228,10 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
             with open(history_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(history_entry) + "\n")
 
-            # Track iteration cost
+            # Finalize cost tracking for this iteration
             iteration_cost = cost_tracker.end_iteration()
 
-            # Log to MLflow
+            # Log hyperparameters, scores, and cost to MLflow for visualization
             is_best = composite > best_score
             scores_with_cost = {**scores, "iteration_cost_usd": iteration_cost, "total_cost_usd": cost_tracker.total_cost}
             exp_logger.log_run(
@@ -245,13 +241,12 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
                 is_best=is_best,
             )
 
-            # Check for improvement
+            # Update best score and optionally create a git checkpoint
             if is_best:
                 best_score = composite
                 best_config = current_config
                 logger.info("New best score: %.4f", best_score)
 
-                # Git checkpoint
                 if program_config.experiment.git_checkpoints:
                     git_checkpoint(
                         config=current_config,
@@ -259,7 +254,7 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
                         run_number=iteration,
                     )
 
-            # Check stopping conditions
+            # --- Stopping conditions ---
             if composite >= min_threshold:
                 logger.info(
                     "Target reached! composite=%.4f >= threshold=%.4f",
@@ -278,7 +273,7 @@ def run_experiment(config_path: str, dry_run: bool = False, resume: bool = False
             if iteration >= max_iterations:
                 break
 
-            # Call agent for next config
+            # Ask the LLM agent to analyze scores and suggest the next config
             from src.agent import suggest_next_config
 
             try:

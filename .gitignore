@@ -8,6 +8,9 @@ __pycache__/
 dist/
 build/
 .pytest_cache
+worktrees/
+*.pdf
+*.db
 
 # Virtual environments
 .venv/
@@ -17,12 +20,9 @@ env/
 # Environment variables
 .env
 
-# Secrets and credentials
-.secrets/*
-!.secrets/.gitkeep
-
 # MLflow
 mlruns/
+mlflow.db
 
 # FAISS
 .faiss_index/
@@ -36,6 +36,9 @@ mlruns/
 # OS
 .DS_Store
 Thumbs.db
+
+# Skills
+skills/
 
 # Experiment artifacts (generated during runs)
 experiment_config.json

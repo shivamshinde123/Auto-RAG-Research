@@ -1,4 +1,4 @@
-"""Tests for agent module."""
+"""Tests for the LLM agent module (config suggestion, validation, deduplication)."""
 
 import json
 import sys
@@ -13,6 +13,7 @@ from src.agent import (
     _validate_config,
 )
 
+# Shared test fixtures: valid search space and sample config
 SEARCH_SPACE = {
     "chunk_size": [256, 512, 1024],
     "chunk_overlap": [25, 50, 100],

@@ -1,16 +1,21 @@
-"""Cost tracking for API calls across the experiment loop."""
+"""Cost tracking for API calls across the experiment loop.
+
+Tracks per-iteration and cumulative API costs based on token usage,
+and enforces a configurable budget limit.
+"""
 
 import logging
 from typing import List
 
 logger = logging.getLogger(__name__)
 
-# Pricing per 1K tokens (as of 2024 — approximate)
+# Approximate pricing per 1K tokens (USD).
+# Unknown models fall back to a conservative default in add_cost().
 MODEL_PRICING = {
     # LLM models (input / output per 1K tokens)
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-    # OpenAI embedding models (per 1K tokens)
+    # Embedding models (input only, no output tokens)
     "text-embedding-ada-002": {"input": 0.0001, "output": 0.0},
     "text-embedding-3-small": {"input": 0.00002, "output": 0.0},
     "text-embedding-3-large": {"input": 0.00013, "output": 0.0},
@@ -32,11 +37,8 @@ class CostTracker:
         self._current_iteration_cost = 0.0
 
     def add_cost(self, model: str, input_tokens: int, output_tokens: int = 0):
-        """Add cost for an API call."""
-        pricing = MODEL_PRICING.get(model)
-        if pricing is None:
-            logger.warning("Unknown model '%s' — using fallback pricing (may be inaccurate)", model)
-            pricing = {"input": 0.001, "output": 0.002}
+        """Add cost for an API call. Uses fallback pricing for unknown models."""
+        pricing = MODEL_PRICING.get(model, {"input": 0.001, "output": 0.002})
         cost = (input_tokens / 1000) * pricing["input"] + (output_tokens / 1000) * pricing["output"]
         self._current_iteration_cost += cost
         self.total_cost += cost

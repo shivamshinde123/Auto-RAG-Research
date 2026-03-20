@@ -1,4 +1,4 @@
-"""Tests for rag_pipeline module."""
+"""Tests for the RAG pipeline (chunking, embedding model selection, retrieve-and-generate)."""
 
 from unittest.mock import MagicMock, patch
 

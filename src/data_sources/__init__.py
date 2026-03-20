@@ -1,14 +1,19 @@
-"""Data source connectors and registry."""
+"""Data source connector registry.
+
+Uses a registry pattern: each connector module calls @register("type_name")
+to add itself to _REGISTRY when imported. The get_data_source() factory
+looks up the type and instantiates the right connector class.
+"""
 
 from src.data_sources.base import BaseDataSource
 
-# Registry mapping type strings to connector classes.
-# Each connector module registers itself when imported.
+# Maps type name strings (e.g., "local_pdf") to their connector classes.
+# Populated lazily when _ensure_registered() imports connector modules.
 _REGISTRY: dict[str, type[BaseDataSource]] = {}
 
 
 def register(type_name: str):
-    """Decorator to register a data source connector class."""
+    """Class decorator that registers a connector under the given type name."""
 
     def decorator(cls: type[BaseDataSource]):
         _REGISTRY[type_name] = cls
@@ -47,22 +52,14 @@ def get_data_source(config: dict) -> BaseDataSource:
     return cls(config)
 
 
-_ALL_CONNECTOR_MODULES = ("local_pdf", "local_txt", "local_csv", "gdrive", "s3", "notion", "web", "huggingface")
-
-
 def _ensure_registered():
-    """Import all connector modules to trigger registration."""
-    if len(_REGISTRY) >= len(_ALL_CONNECTOR_MODULES):
+    """Lazily import connector modules so their @register decorators fire.
+
+    Only runs once — subsequent calls short-circuit if _REGISTRY is populated.
+    To add a new connector, add its import here.
+    """
+    if _REGISTRY:
         return
 
-    # Import each connector module — their @register decorators populate _REGISTRY
-    from src.data_sources import (  # noqa: F401
-        local_pdf,
-        local_txt,
-        local_csv,
-        gdrive,
-        s3,
-        notion,
-        web,
-        huggingface,
-    )
+    # Each import triggers the @register decorator on the connector class
+    from src.data_sources import local_pdf  # noqa: F401

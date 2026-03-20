@@ -1,4 +1,10 @@
-"""RAG pipeline with configurable chunking, embeddings, and retrieval."""
+"""RAG pipeline with configurable chunking, embeddings, and retrieval.
+
+Implements the core retrieve-and-generate loop:
+1. Split documents into chunks (RecursiveCharacterTextSplitter)
+2. Build a FAISS vector store with the chosen embedding model
+3. For each QA pair, retrieve top-k chunks and generate an answer via LLM
+"""
 
 import logging
 from typing import List, Optional, Tuple
@@ -28,7 +34,13 @@ def chunk_documents(
 
 
 def get_embedding_model(model_name: str):
-    """Return a LangChain embedding model instance by name."""
+    """Return a LangChain embedding model instance by name.
+
+    Only three embedding models are supported (hardcoded):
+    - text-embedding-ada-002: OpenAI API (best quality, requires API key)
+    - BGE-large: Local HuggingFace model (good quality, slower first load)
+    - all-MiniLM-L6-v2: Local HuggingFace model (fastest, smaller)
+    """
     if model_name == "text-embedding-ada-002":
         from langchain_openai import OpenAIEmbeddings
         return OpenAIEmbeddings(model="text-embedding-ada-002")
@@ -60,7 +72,11 @@ def build_vector_store(chunks: List[Document], embedding_model_name: str):
 
 
 def get_llm(model_name: str):
-    """Return a LangChain LLM instance by name."""
+    """Return a LangChain chat model instance.
+
+    Any OpenAI chat model name is accepted (e.g., gpt-4o-mini, gpt-3.5-turbo).
+    Temperature is set to 0 for deterministic generation.
+    """
     from langchain_openai import ChatOpenAI
     return ChatOpenAI(model=model_name, temperature=0)
 
