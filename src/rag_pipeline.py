@@ -132,11 +132,19 @@ def run_pipeline(
         return [], 0
 
     # Step 2: Build vector store
-    vector_store = build_vector_store(chunks, embedding_model)
+    try:
+        vector_store = build_vector_store(chunks, embedding_model)
+    except Exception as e:
+        logger.error("Failed to build vector store with %s: %s", embedding_model, e, exc_info=True)
+        return [], 0
     retriever = vector_store.as_retriever(search_kwargs={"k": top_k})
 
     # Step 3: Set up LLM
-    llm = get_llm(llm_model)
+    try:
+        llm = get_llm(llm_model)
+    except Exception as e:
+        logger.error("Failed to initialize LLM %s: %s", llm_model, e, exc_info=True)
+        return [], 0
 
     # Step 4: For each QA pair, retrieve and generate
     logger.info("Processing %d QA pairs (model=%s, top_k=%d)", len(qa_pairs), llm_model, top_k)
@@ -158,8 +166,12 @@ def run_pipeline(
             f"Question: {question}\n\n"
             f"Answer:"
         )
-        response = llm.invoke(prompt)
-        answer = response.content if hasattr(response, "content") else str(response)
+        try:
+            response = llm.invoke(prompt)
+            answer = response.content if hasattr(response, "content") else str(response)
+        except Exception as e:
+            logger.error("LLM call failed for QA pair %d: %s", i + 1, e, exc_info=True)
+            answer = ""
 
         results.append({
             "question": question,
