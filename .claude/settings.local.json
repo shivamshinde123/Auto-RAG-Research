@@ -1,5 +1,16 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(python -m pytest --collect-only)",
+      "Bash(uv run:*)",
+      "Bash(git -C \"d:/WPI Things/Auto-RAG-Research\" worktree list)",
+      "Bash(obsidian read:*)",
+      "Bash(obsidian delete:*)",
+      "Bash(obsidian search:*)",
+      "Bash(obsidian property:set name=\"updated\" value=\"2026-03-20\" file=\"Auto-RAG-Research/Progress\")"
+    ],
     "deny": [
       "Bash(rm *)",
       "Bash(rm -rf *)",
