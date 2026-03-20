@@ -6,22 +6,55 @@ from unittest.mock import patch, MagicMock
 
 from src.data_sources.local_pdf import LocalPdfDataSource
 
+# Check if a PDF parser is available for tests that need actual parsing
+_has_pdf_parser = False
+try:
+    import fitz
+    _has_pdf_parser = True
+except ImportError:
+    try:
+        import pdfplumber
+        _has_pdf_parser = True
+    except ImportError:
+        pass
+
+requires_pdf_parser = pytest.mark.skipif(
+    not _has_pdf_parser, reason="No PDF parser (fitz or pdfplumber) available"
+)
+
 
 @pytest.fixture
 def pdf_dir(tmp_path):
     """Create a temp dir with a dummy PDF file."""
-    # Create a minimal valid PDF using PyMuPDF
-    import fitz
-
-    pdf_path = tmp_path / "test.pdf"
-    doc = fitz.open()
-    page = doc.new_page()
-    text_point = fitz.Point(72, 72)
-    page.insert_text(text_point, "Hello from page 1")
-    page2 = doc.new_page()
-    page2.insert_text(text_point, "Hello from page 2")
-    doc.save(str(pdf_path))
-    doc.close()
+    try:
+        import fitz
+        pdf_path = tmp_path / "test.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        text_point = fitz.Point(72, 72)
+        page.insert_text(text_point, "Hello from page 1")
+        page2 = doc.new_page()
+        page2.insert_text(text_point, "Hello from page 2")
+        doc.save(str(pdf_path))
+        doc.close()
+    except ImportError:
+        # Fallback: write a minimal valid PDF manually
+        pdf_path = tmp_path / "test.pdf"
+        pdf_content = (
+            b"%PDF-1.4\n"
+            b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+            b"2 0 obj<</Type/Pages/Kids[3 0 R 4 0 R]/Count 2>>endobj\n"
+            b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
+            b"/Contents 5 0 R/Resources<</Font<</F1 7 0 R>>>>>>endobj\n"
+            b"4 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
+            b"/Contents 6 0 R/Resources<</Font<</F1 7 0 R>>>>>>endobj\n"
+            b"5 0 obj<</Length 44>>stream\nBT /F1 12 Tf 72 720 Td (Hello from page 1) Tj ET\nendstream\nendobj\n"
+            b"6 0 obj<</Length 44>>stream\nBT /F1 12 Tf 72 720 Td (Hello from page 2) Tj ET\nendstream\nendobj\n"
+            b"7 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+            b"xref\n0 8\n"
+            b"trailer<</Size 8/Root 1 0 R>>\nstartxref\n0\n%%EOF\n"
+        )
+        pdf_path.write_bytes(pdf_content)
     return tmp_path
 
 
@@ -65,12 +98,14 @@ class TestHealthCheck:
 
 
 class TestLoad:
+    @requires_pdf_parser
     def test_loads_pages(self, source):
         docs = source.load()
         assert len(docs) == 2
         assert "Hello from page 1" in docs[0].page_content
         assert "Hello from page 2" in docs[1].page_content
 
+    @requires_pdf_parser
     def test_metadata(self, source):
         docs = source.load()
         meta = docs[0].metadata

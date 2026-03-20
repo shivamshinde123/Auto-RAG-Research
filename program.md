@@ -34,4 +34,4 @@ max_cost_usd: 5.0
 
 ## Experiment
 experiment_name: autoragresearch_run_1
-git_checkpoints: true
+git_checkpoints: false

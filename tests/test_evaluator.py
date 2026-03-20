@@ -4,9 +4,27 @@ import math
 import sys
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 
-from src.evaluator import METRIC_NAMES, compute_composite
+from src.evaluator import METRIC_NAMES, _RAGAS_METRIC_NAME_MAP, compute_composite
+
+
+def _mock_ragas_result(metric_values: dict):
+    """Create a mock RAGAS EvaluationResult with .to_pandas() support.
+
+    Args:
+        metric_values: dict mapping canonical metric names to values.
+            Uses _RAGAS_METRIC_NAME_MAP to translate to RAGAS column names.
+    """
+    columns = {}
+    for canonical_name, value in metric_values.items():
+        ragas_name = _RAGAS_METRIC_NAME_MAP.get(canonical_name, canonical_name)
+        columns[ragas_name] = [value]
+    df = pd.DataFrame(columns)
+    result = MagicMock()
+    result.to_pandas.return_value = df
+    return result
 
 
 class TestComputeComposite:
@@ -66,21 +84,26 @@ class TestEvaluate:
         return mock_ragas, mock_datasets, mock_ragas_metrics
 
     def test_evaluate_returns_all_metrics(self):
-        mock_ragas = MagicMock()
-        mock_ragas.evaluate.return_value = {
+        mock_result = _mock_ragas_result({
             "faithfulness": 0.85,
             "answer_relevancy": 0.78,
             "context_precision": 0.82,
             "context_recall": 0.90,
-        }
-        mock_datasets = MagicMock()
+        })
+
+        # Mock RAGAS modules that are imported inside evaluate()
+        mock_ragas = MagicMock()
+        mock_ragas.evaluate.return_value = mock_result
+        mock_ragas.EvaluationDataset = MagicMock()
+        mock_ragas.SingleTurnSample = MagicMock()
+        mock_ragas_metrics = MagicMock()
+        mock_langchain_openai = MagicMock()
 
         with patch.dict(sys.modules, {
             "ragas": mock_ragas,
-            "ragas.metrics": MagicMock(),
-            "datasets": mock_datasets,
+            "ragas.metrics": mock_ragas_metrics,
+            "langchain_openai": mock_langchain_openai,
         }):
-            # Re-import to pick up mocked modules
             from src.evaluator import evaluate
 
             results = [
@@ -103,12 +126,15 @@ class TestEvaluate:
     def test_evaluate_handles_ragas_failure(self):
         mock_ragas = MagicMock()
         mock_ragas.evaluate.side_effect = RuntimeError("RAGAS crashed")
-        mock_datasets = MagicMock()
+        mock_ragas.EvaluationDataset = MagicMock()
+        mock_ragas.SingleTurnSample = MagicMock()
+        mock_ragas_metrics = MagicMock()
+        mock_langchain_openai = MagicMock()
 
         with patch.dict(sys.modules, {
             "ragas": mock_ragas,
-            "ragas.metrics": MagicMock(),
-            "datasets": mock_datasets,
+            "ragas.metrics": mock_ragas_metrics,
+            "langchain_openai": mock_langchain_openai,
         }):
             from src.evaluator import evaluate
 
@@ -127,18 +153,25 @@ class TestEvaluate:
             assert math.isnan(scores["composite_score"])
 
     def test_evaluate_handles_partial_metric_failure(self):
-        mock_ragas = MagicMock()
-        mock_ragas.evaluate.return_value = {
+        # Only faithfulness and context_precision have values;
+        # answer_relevancy is None and context_recall is missing
+        mock_result = _mock_ragas_result({
             "faithfulness": 0.80,
             "answer_relevancy": None,
             "context_precision": 0.70,
-        }
-        mock_datasets = MagicMock()
+        })
+
+        mock_ragas = MagicMock()
+        mock_ragas.evaluate.return_value = mock_result
+        mock_ragas.EvaluationDataset = MagicMock()
+        mock_ragas.SingleTurnSample = MagicMock()
+        mock_ragas_metrics = MagicMock()
+        mock_langchain_openai = MagicMock()
 
         with patch.dict(sys.modules, {
             "ragas": mock_ragas,
-            "ragas.metrics": MagicMock(),
-            "datasets": mock_datasets,
+            "ragas.metrics": mock_ragas_metrics,
+            "langchain_openai": mock_langchain_openai,
         }):
             from src.evaluator import evaluate
 
